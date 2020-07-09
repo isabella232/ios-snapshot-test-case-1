@@ -104,7 +104,10 @@ typedef NS_ENUM(NSUInteger, FBTestSnapshotFileNameType) {
                                  error:(NSError **)errorPtr
 {
   NSString *filePath = [self _referenceFilePathForSelector:selector identifier:identifier];
-  UIImage *image = [UIImage imageWithContentsOfFile:filePath];
+
+  NSError *loadImageError = nil;
+  UIImage *image = [self referenceImageWithContentsOfFile:filePath error:&loadImageError];
+
   if (nil == image && NULL != errorPtr) {
     BOOL exists = [_fileManager fileExistsAtPath:filePath];
     if (!exists) {
@@ -116,11 +119,41 @@ typedef NS_ENUM(NSUInteger, FBTestSnapshotFileNameType) {
                                              NSLocalizedFailureReasonErrorKey: @"Reference image not found. You need to run the test in record mode",
                                              }];
     } else {
+      NSMutableDictionary *userInfo = [@{
+                                         FBReferenceImageFilePathKey: filePath,
+                                         NSLocalizedDescriptionKey: @"Unable to load reference image.",
+                                         NSLocalizedFailureReasonErrorKey: @"Reference image file exists but can't be used.",
+                                         } mutableCopy];
+      if (loadImageError != nil) {
+        [userInfo setObject:loadImageError forKey:NSUnderlyingErrorKey];
+      }
       *errorPtr = [NSError errorWithDomain:FBSnapshotTestControllerErrorDomain
                                       code:FBSnapshotTestControllerErrorCodeUnknown
-                                  userInfo:nil];
+                                  userInfo:userInfo];
     }
   }
+  return image;
+}
+
+- (UIImage *)referenceImageWithContentsOfFile:(NSString *)path
+                                        error:(out NSError *__autoreleasing *)errorPtr
+{
+  NSData *imageData = [NSData dataWithContentsOfFile:path options:0 error:errorPtr];
+  if (imageData == nil) {
+    return nil;
+  }
+
+  UIImage *image = [UIImage imageWithData:imageData scale:[[UIScreen mainScreen] scale]];
+  if (image == nil && NULL != errorPtr) {
+    *errorPtr = [NSError errorWithDomain:FBSnapshotTestControllerErrorDomain
+                                    code:FBSnapshotTestControllerErrorCodeUnknown
+                                userInfo:@{
+                                           FBReferenceImageFilePathKey: path,
+                                           NSLocalizedDescriptionKey: @"Unable to load reference image.",
+                                           NSLocalizedFailureReasonErrorKey: @"Reference image file is in unsupported format.",
+                                           }];
+  }
+
   return image;
 }
 
